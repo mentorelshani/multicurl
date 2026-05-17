@@ -127,7 +127,7 @@ class Channel
     /**
      * Connection timeout
      */
-    protected int $connectionTimeout;
+    protected int $connectionTimeout = 0;
 
     /**
      * Whether the channel is streamable

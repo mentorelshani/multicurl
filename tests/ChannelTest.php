@@ -5,6 +5,7 @@ namespace Maurice\Multicurl\Tests;
 
 use Maurice\Multicurl\Channel;
 use Maurice\Multicurl\Manager;
+use Maurice\Multicurl\Sse\SseEvent;
 use Maurice\Multicurl\SseChannel;
 use PHPUnit\Framework\TestCase;
 
@@ -367,6 +368,19 @@ class ChannelTest extends TestCase
         $this->assertNull($channel->getStreamErrorMessage());
     }
 
+    public function testConnectionTimeoutDefaultsBeforeSetter(): void
+    {
+        $channel = new Channel();
+
+        $this->assertSame(300_000, $channel->getConnectionTimeout());
+
+        $channel->setConnectionTimeout(5000);
+        $this->assertSame(5000, $channel->getConnectionTimeout());
+
+        $channel->setConnectionTimeout(null);
+        $this->assertSame(300_000, $channel->getConnectionTimeout());
+    }
+
     public function testSseEventLimitAbortsWithError(): void
     {
         $channel = new SseChannel('file:///dev/null');
@@ -377,6 +391,31 @@ class ChannelTest extends TestCase
         $this->assertSame(0, $written);
         $this->assertTrue($channel->isStreamAbortedByError());
         $this->assertSame('SSE event exceeded maximum size of 5 bytes', $channel->getStreamErrorMessage());
+    }
+
+    public function testSseEmptyDataFieldDoesNotTriggerWarning(): void
+    {
+        $channel = new SseChannel('file:///dev/null');
+        $events = [];
+
+        $channel->setOnEventCallback(function (SseEvent $event) use (&$events): ?bool {
+            $events[] = $event;
+            return null;
+        });
+
+        set_error_handler(static function (int $severity, string $message, string $file, int $line): never {
+            throw new \ErrorException($message, 0, $severity, $file, $line);
+        });
+
+        try {
+            $written = $channel->onStream("data:\n\n", new Manager());
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertSame(strlen("data:\n\n"), $written);
+        $this->assertCount(1, $events);
+        $this->assertSame('', $events[0]->data);
     }
 
     public function testSseChannelsHaveDefaultStreamLimits(): void
