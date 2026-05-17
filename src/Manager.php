@@ -170,93 +170,115 @@ class Manager
     {
         $this->mh = curl_multi_init();
 
-        loop:
-        $active = null;
-        $this->addNCurlResourcesToMultiCurl($this->maxConcurrency);
+        try {
+            loop:
+            $active = null;
+            $this->addNCurlResourcesToMultiCurl($this->maxConcurrency);
 
-        do {
-            $mrc = curl_multi_exec($this->mh, $active);
-        } while ($mrc === CURLM_CALL_MULTI_PERFORM);
+            do {
+                $mrc = curl_multi_exec($this->mh, $active);
+            } while ($mrc === CURLM_CALL_MULTI_PERFORM);
 
-        do {
+            do {
 
-            if (curl_multi_select($this->mh, (count($this->delayQueue) > 0 ? 0.1 : 1.0)) !== -1) {
-
-                do {
-
-                    $mrc = curl_multi_exec($this->mh, $active);
+                if (curl_multi_select($this->mh, (count($this->delayQueue) > 0 ? 0.1 : 1.0)) !== -1) {
 
                     do {
 
-                        $multiInfo = curl_multi_info_read($this->mh, $msgInQueue);
+                        $mrc = curl_multi_exec($this->mh, $active);
 
-                        if ($multiInfo === false) {
-                            break;
-                        }
+                        do {
 
-                        if ($multiInfo['msg'] === CURLMSG_DONE) {
+                            $multiInfo = curl_multi_info_read($this->mh, $msgInQueue);
 
-                            $ch = $multiInfo['handle'];
-                            unset($multiInfo['handle']);
-
-                            /** @var Channel $channel */
-                            $channel = $this->resourceChannelLookup[self::toHandleIdentifier($ch)];
-                            $info = curl_getinfo($ch);
-
-                            if ($multiInfo['result'] === CURLE_OK || ($multiInfo['result'] === CURLE_WRITE_ERROR && $channel->isStreamAborted())) {
-                                $content = curl_multi_getcontent($ch);
-
-                                $channel->onReady($info, $content ?? '', $this);
-                            } else if ($multiInfo['result'] === CURLE_OPERATION_TIMEOUTED) {
-                                if ($info['connect_time'] > 0 && $info['pretransfer_time'] > 0) {
-                                    $channel->onTimeout(Channel::TIMEOUT_TOTAL, (int)($info['total_time'] * 1000), $this);
-                                } else {
-                                    $channel->onTimeout(Channel::TIMEOUT_CONNECTION, (int)($info['total_time'] * 1000), $this);
-                                }
-
-                            } else {
-                                $channel->onError(curl_strerror($multiInfo['result']), $multiInfo['result'], $info, $this);
+                            if ($multiInfo === false) {
+                                break;
                             }
 
-                            // Remove channel from resource lookup
-                            $this->closeChannel($channel);
-                            unset($ch);
+                            if ($multiInfo['msg'] === CURLMSG_DONE) {
+
+                                $ch = $multiInfo['handle'];
+                                unset($multiInfo['handle']);
+
+                                /** @var Channel $channel */
+                                $channel = $this->resourceChannelLookup[self::toHandleIdentifier($ch)];
+                                $info = curl_getinfo($ch);
+
+                                try {
+                                    $this->dispatchChannelCompletion($channel, $ch, $multiInfo, $info);
+                                    $this->closeChannel($channel);
+                                } catch (\Throwable $exception) {
+                                    $this->detachChannel($channel);
+                                    throw $exception;
+                                } finally {
+                                    unset($ch);
+                                }
+                            }
+
+
+                        } while ($msgInQueue > 0);
+
+                        $this->processDelayQueue();
+
+                        // Check queue low watermark
+                        if (count($this->channelQueue) < $this->maxConcurrency * $this->lowWatermarkFactor) {
+                            $this->onQueueLowWatermark();
                         }
 
-
-                    } while ($msgInQueue > 0);
-
-                    $this->processDelayQueue();
-
-                    // Check queue low watermark
-                    if (count($this->channelQueue) < $this->maxConcurrency * $this->lowWatermarkFactor) {
-                        $this->onQueueLowWatermark();
-                    }
-
-                    // Add new channels from the queue if not yet exhausted
-                    if (count($this->channelQueue) > 0) {
-                        if ($this->addNCurlResourcesToMultiCurl($this->maxConcurrency - $active) > 0) {
-                            $mrc = CURLM_CALL_MULTI_PERFORM;
+                        // Add new channels from the queue if not yet exhausted
+                        if (count($this->channelQueue) > 0) {
+                            if ($this->addNCurlResourcesToMultiCurl($this->maxConcurrency - $active) > 0) {
+                                $mrc = CURLM_CALL_MULTI_PERFORM;
+                            }
                         }
-                    }
 
-                } while ($mrc === CURLM_CALL_MULTI_PERFORM);
+                    } while ($mrc === CURLM_CALL_MULTI_PERFORM);
 
+                }
+
+            } while ($active && $mrc === CURLM_OK);
+
+            $delayToFirstChannel = $this->processDelayQueue();
+            if ($delayToFirstChannel !== null) {
+                if ($delayToFirstChannel > 0) {
+                    usleep($delayToFirstChannel);
+                }
+
+                goto loop;
             }
 
-        } while ($active && $mrc === CURLM_OK);
+        } finally {
+            $this->detachActiveChannels();
 
-        $delayToFirstChannel = $this->processDelayQueue();
-        if ($delayToFirstChannel !== null) {
-            if ($delayToFirstChannel > 0) {
-                usleep($delayToFirstChannel);
+            if (isset($this->mh) && $this->mh instanceof \CurlMultiHandle) {
+                curl_multi_close($this->mh);
+                unset($this->mh);
             }
-
-            goto loop;
         }
+    }
 
-        curl_multi_close($this->mh);
-        unset($this->mh);
+    /**
+     * Dispatches the completion event for a finished cURL handle.
+     *
+     * @param array<array-key, mixed> $multiInfo Output of curl_multi_info_read(), without the handle
+     * @param array<array-key, mixed> $info Output of curl_getinfo()
+     */
+    protected function dispatchChannelCompletion(Channel $channel, CurlHandle $ch, array $multiInfo, array $info): void
+    {
+        if ($multiInfo['result'] === CURLE_OK || ($multiInfo['result'] === CURLE_WRITE_ERROR && $channel->isStreamAborted())) {
+            $content = curl_multi_getcontent($ch);
+
+            $channel->onReady($info, $content ?? '', $this);
+        } else if ($multiInfo['result'] === CURLE_OPERATION_TIMEOUTED) {
+            if ($info['connect_time'] > 0 && $info['pretransfer_time'] > 0) {
+                $channel->onTimeout(Channel::TIMEOUT_TOTAL, (int)($info['total_time'] * 1000), $this);
+            } else {
+                $channel->onTimeout(Channel::TIMEOUT_CONNECTION, (int)($info['total_time'] * 1000), $this);
+            }
+
+        } else {
+            $channel->onError(curl_strerror($multiInfo['result']), $multiInfo['result'], $info, $this);
+        }
     }
 
     /**
@@ -380,11 +402,28 @@ class Manager
      */
     public function closeChannel(Channel $channel): void
     {
+        if (!$this->detachChannel($channel)) {
+            return;
+        }
+
+        $channel->onComplete($this);
+
+        $nextChannel = $channel->popNextChannel();
+        if ($nextChannel !== null) {
+            $this->addChannel($nextChannel);
+        }
+    }
+
+    /**
+     * Detaches a channel from cURL without invoking callbacks or scheduling follow-up work.
+     */
+    protected function detachChannel(Channel $channel): bool
+    {
         $ch = $channel->getCurlHandle();
 
         // If the handle is already null (e.g., channel already closed), do nothing.
         if ($ch === null) {
-            return;
+            return false;
         }
 
         if (isset($this->resourceChannelLookup[self::toHandleIdentifier($ch)])) {
@@ -397,11 +436,17 @@ class Manager
 
         curl_close($ch);
         $channel->setCurlHandle(null);
-        $channel->onComplete($this);
 
-        $nextChannel = $channel->popNextChannel();
-        if ($nextChannel !== null) {
-            $this->addChannel($nextChannel);
+        return true;
+    }
+
+    /**
+     * Detaches all active channels from cURL during shutdown or exceptional exit.
+     */
+    protected function detachActiveChannels(): void
+    {
+        foreach (array_values($this->resourceChannelLookup) as $channel) {
+            $this->detachChannel($channel);
         }
     }
 }

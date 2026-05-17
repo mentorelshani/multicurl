@@ -168,4 +168,37 @@ class ManagerTest extends TestCase
         $this->assertEquals(3, $queueSizeFromCallback);
         $this->assertEquals(5, $maxConcurrencyFromCallback);
     }
-} 
+
+    public function testCallbackExceptionCleansCurlState(): void
+    {
+        $manager = new Manager(1);
+        $channel = new Channel();
+        $exception = new \RuntimeException('Callback failed');
+
+        $channel->setCurlOption(CURLOPT_URL, 'file:///dev/null');
+        $channel->setOnReadyCallback(function () use ($exception): void {
+            throw $exception;
+        });
+
+        $manager->addChannel($channel);
+
+        try {
+            $manager->run();
+            $this->fail('Expected callback exception to propagate');
+        } catch (\RuntimeException $caughtException) {
+            $this->assertSame($exception, $caughtException);
+        }
+
+        $reflection = new \ReflectionClass($manager);
+
+        $resourceChannelLookupProperty = $reflection->getProperty('resourceChannelLookup');
+        $resourceChannelLookupProperty->setAccessible(true);
+        $this->assertSame([], $resourceChannelLookupProperty->getValue($manager));
+
+        $multiHandleProperty = $reflection->getProperty('mh');
+        $multiHandleProperty->setAccessible(true);
+
+        $this->assertFalse($multiHandleProperty->isInitialized($manager));
+        $this->assertNull($channel->getCurlHandle());
+    }
+}
