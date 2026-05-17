@@ -19,7 +19,6 @@ class ManagerTest extends TestCase
 
         $reflection = new \ReflectionClass($manager);
         $property = $reflection->getProperty('maxConcurrency');
-        $property->setAccessible(true);
         $this->assertEquals(10, $property->getValue($manager));
 
         $manager = new Manager(20);
@@ -35,7 +34,6 @@ class ManagerTest extends TestCase
 
         $reflection = new \ReflectionClass($manager);
         $property = $reflection->getProperty('maxConcurrency');
-        $property->setAccessible(true);
 
         $manager->setMaxConcurrency(5);
         $this->assertEquals(5, $property->getValue($manager));
@@ -51,11 +49,10 @@ class ManagerTest extends TestCase
     public function testAddChannel(): void
     {
         $manager = new Manager();
-        $channel = $this->createMock(Channel::class);
+        $channel = new Channel();
 
         $reflection = new \ReflectionClass($manager);
         $channelQueueProperty = $reflection->getProperty('channelQueue');
-        $channelQueueProperty->setAccessible(true);
 
         // Test normal add
         $manager->addChannel($channel);
@@ -66,7 +63,7 @@ class ManagerTest extends TestCase
         $channelQueueProperty->setValue($manager, []);
 
         // Test unshift
-        $channel2 = $this->createMock(Channel::class);
+        $channel2 = new Channel();
         $manager->addChannel($channel, false);
         $manager->addChannel($channel2, true);
         $channelQueue = $channelQueueProperty->getValue($manager);
@@ -81,13 +78,11 @@ class ManagerTest extends TestCase
     public function testAddChannelWithDelay(): void
     {
         $manager = new Manager();
-        $channel = $this->createMock(Channel::class);
+        $channel = new Channel();
 
         $reflection = new \ReflectionClass($manager);
         $delayQueueProperty = $reflection->getProperty('delayQueue');
-        $delayQueueProperty->setAccessible(true);
         $delayQueueSortedProperty = $reflection->getProperty('delayQueueSorted');
-        $delayQueueSortedProperty->setAccessible(true);
 
         // Test delay
         $manager->addChannel($channel, false, 0.5);
@@ -111,7 +106,6 @@ class ManagerTest extends TestCase
 
         $reflection = new \ReflectionClass($manager);
         $property = $reflection->getProperty('refillCallback');
-        $property->setAccessible(true);
 
         $manager->setRefillCallback($callback);
         $this->assertSame($callback, $property->getValue($manager));
@@ -151,15 +145,13 @@ class ManagerTest extends TestCase
 
         $reflection = new \ReflectionClass($manager);
         $onQueueLowWatermark = $reflection->getMethod('onQueueLowWatermark');
-        $onQueueLowWatermark->setAccessible(true);
         $channelQueueProperty = $reflection->getProperty('channelQueue');
-        $channelQueueProperty->setAccessible(true);
 
         // Add some channels to the queue
         $channelQueueProperty->setValue($manager, [
-            $this->createMock(Channel::class),
-            $this->createMock(Channel::class),
-            $this->createMock(Channel::class)
+            new Channel(),
+            new Channel(),
+            new Channel()
         ]);
 
         $onQueueLowWatermark->invoke($manager);
@@ -192,11 +184,9 @@ class ManagerTest extends TestCase
         $reflection = new \ReflectionClass($manager);
 
         $resourceChannelLookupProperty = $reflection->getProperty('resourceChannelLookup');
-        $resourceChannelLookupProperty->setAccessible(true);
         $this->assertSame([], $resourceChannelLookupProperty->getValue($manager));
 
         $multiHandleProperty = $reflection->getProperty('mh');
-        $multiHandleProperty->setAccessible(true);
 
         $this->assertFalse($multiHandleProperty->isInitialized($manager));
         $this->assertNull($channel->getCurlHandle());

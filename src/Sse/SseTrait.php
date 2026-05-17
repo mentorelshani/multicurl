@@ -49,6 +49,8 @@ trait SseTrait
     private string $currentEventData = '';
     private ?string $currentEventId = null;
     private int $retry = 3000; // Default SSE retry in ms
+    private ?int $maxSseEventSize = null;
+    private bool $maxSseEventSizeConfigured = false;
 
     /**
      * Sets or removes a header
@@ -81,6 +83,16 @@ trait SseTrait
     abstract public function setOnStreamCallback(\Closure $onStreamCb): void;
 
     /**
+     * Sets the default maximum stream buffer size unless the user already configured it.
+     */
+    abstract protected function setDefaultMaxStreamBufferSize(?int $maxBytes): void;
+
+    /**
+     * Marks the stream as aborted due to an internal processing error.
+     */
+    abstract protected function abortStreamWithError(string $message): void;
+
+    /**
      * Sets the callback function that is called when an SSE event is received
      *
      * If the callback returns false, the stream will be closed.
@@ -93,6 +105,24 @@ trait SseTrait
     }
 
     /**
+     * Sets the maximum accumulated SSE event size in bytes. Null disables the limit.
+     */
+    public function setMaxSseEventSize(?int $maxBytes): void
+    {
+        $this->assertValidSseEventSize($maxBytes);
+        $this->maxSseEventSize = $maxBytes;
+        $this->maxSseEventSizeConfigured = true;
+    }
+
+    /**
+     * Returns the maximum accumulated SSE event size in bytes. Null means unlimited.
+     */
+    public function getMaxSseEventSize(): ?int
+    {
+        return $this->maxSseEventSize;
+    }
+
+    /**
      * Sets up the required SSE headers and stream settings
      */
     protected function initializeSse(): void
@@ -101,6 +131,8 @@ trait SseTrait
         $this->setHeader('Accept', 'text/event-stream');
         $this->setHeader('Cache-Control', 'no-cache');
         $this->setStreamable(true); // Ensure channel is streamable
+        $this->setDefaultMaxStreamBufferSize(1024 * 1024);
+        $this->setDefaultMaxSseEventSize(4 * 1024 * 1024);
 
         // Set the stream callback to process the stream
         $this->setOnStreamCallback(function(Channel $channel, Stream $stream, Manager $manager): ?bool {
@@ -163,7 +195,7 @@ trait SseTrait
             $field = $parts[0];
             $value = $parts[1] ?? '';
 
-            if (isset($parts[1]) && $parts[1][0] === ' ') {
+            if (isset($parts[1]) && $parts[1] !== '' && $parts[1][0] === ' ') {
                 $value = substr($value, 1); // Remove leading space if present
             }
 
@@ -172,7 +204,9 @@ trait SseTrait
                     $this->currentEventName = $value;
                     break;
                 case 'data':
-                    $this->currentEventData .= $value . "\n";
+                    if (!$this->appendCurrentEventData($value)) {
+                        return false;
+                    }
                     break;
                 case 'id':
                     $this->currentEventId = $value;
@@ -188,6 +222,37 @@ trait SseTrait
             }
         }
         return true;
+    }
+
+    protected function setDefaultMaxSseEventSize(?int $maxBytes): void
+    {
+        $this->assertValidSseEventSize($maxBytes);
+
+        if (!$this->maxSseEventSizeConfigured) {
+            $this->maxSseEventSize = $maxBytes;
+        }
+    }
+
+    protected function appendCurrentEventData(string $value): bool
+    {
+        if ($this->maxSseEventSize !== null && strlen($this->currentEventData) + strlen($value) + 1 > $this->maxSseEventSize) {
+            $this->abortStreamWithError(sprintf(
+                'SSE event exceeded maximum size of %d bytes',
+                $this->maxSseEventSize
+            ));
+
+            return false;
+        }
+
+        $this->currentEventData .= $value . "\n";
+        return true;
+    }
+
+    protected function assertValidSseEventSize(?int $maxBytes): void
+    {
+        if ($maxBytes !== null && $maxBytes < 0) {
+            throw new \InvalidArgumentException('Maximum SSE event size must be null or greater than or equal to zero');
+        }
     }
 
     /**

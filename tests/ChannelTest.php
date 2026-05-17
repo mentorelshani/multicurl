@@ -5,6 +5,7 @@ namespace Maurice\Multicurl\Tests;
 
 use Maurice\Multicurl\Channel;
 use Maurice\Multicurl\Manager;
+use Maurice\Multicurl\SseChannel;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -319,4 +320,70 @@ class ChannelTest extends TestCase
         // Check that channels were executed in the correct order
         $this->assertEquals(['before', 'existing', 'main'], $executionOrder);
     }
-} 
+
+    public function testStreamBufferLimitAbortsWithError(): void
+    {
+        $channel = new Channel();
+        $channel->setStreamable(true);
+        $channel->setMaxStreamBufferSize(3);
+
+        $written = $channel->onStream('abcd', new Manager());
+
+        $this->assertSame(0, $written);
+        $this->assertTrue($channel->isStreamAborted());
+        $this->assertTrue($channel->isStreamAbortedByError());
+        $this->assertSame(Channel::STREAM_ABORT_ERROR, $channel->getStreamAbortReason());
+        $this->assertSame('Stream buffer exceeded maximum size of 3 bytes', $channel->getStreamErrorMessage());
+    }
+
+    public function testStreamBufferLimitAllowsCallbackToConsumeBuffer(): void
+    {
+        $channel = new Channel();
+        $channel->setMaxStreamBufferSize(3);
+        $channel->setOnStreamCallback(function (Channel $channel): ?bool {
+            $channel->getStream()->consume();
+            return null;
+        });
+
+        $written = $channel->onStream('abcd', new Manager());
+
+        $this->assertSame(4, $written);
+        $this->assertFalse($channel->isStreamAborted());
+        $this->assertSame(0, $channel->getStream()->getSize());
+    }
+
+    public function testUserStreamAbortKeepsUserAbortReason(): void
+    {
+        $channel = new Channel();
+        $channel->setOnStreamCallback(function (): bool {
+            return false;
+        });
+
+        $written = $channel->onStream('abcd', new Manager());
+
+        $this->assertSame(0, $written);
+        $this->assertTrue($channel->isStreamAbortedByUser());
+        $this->assertSame(Channel::STREAM_ABORT_USER, $channel->getStreamAbortReason());
+        $this->assertNull($channel->getStreamErrorMessage());
+    }
+
+    public function testSseEventLimitAbortsWithError(): void
+    {
+        $channel = new SseChannel('file:///dev/null');
+        $channel->setMaxSseEventSize(5);
+
+        $written = $channel->onStream("data: abcdef\n", new Manager());
+
+        $this->assertSame(0, $written);
+        $this->assertTrue($channel->isStreamAbortedByError());
+        $this->assertSame('SSE event exceeded maximum size of 5 bytes', $channel->getStreamErrorMessage());
+    }
+
+    public function testSseChannelsHaveDefaultStreamLimits(): void
+    {
+        $channel = new SseChannel('file:///dev/null');
+
+        $this->assertSame(1024 * 1024, $channel->getMaxStreamBufferSize());
+        $this->assertSame(4 * 1024 * 1024, $channel->getMaxSseEventSize());
+    }
+}

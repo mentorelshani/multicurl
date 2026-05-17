@@ -12,7 +12,7 @@ up: ## Start services (HTTP server)
 down: ## Stop all services
 	docker-compose down
 
-test: test-8.4 ## Run all tests with PHP 8.4 (default)
+test: test-8.5 ## Run all tests with PHP 8.5 (default)
 	
 test-all: test-8.1 test-8.2 test-8.3 test-8.4 test-8.5 ## Run tests with PHP 8.1, 8.2, 8.3, 8.4 and 8.5
 
@@ -26,7 +26,7 @@ test-8.4: up unit-8.4 integration-8.4 ## Run all tests with PHP 8.4
 	
 test-8.5: up unit-8.5 integration-8.5 ## Run all tests with PHP 8.5
 	
-unit: unit-8.4 ## Run unit tests only with PHP 8.4 (default)
+unit: unit-8.5 ## Run unit tests only with PHP 8.5 (default)
 
 unit-8.1: up ## Run unit tests only with PHP 8.1
 	docker-compose run --build --rm php81 vendor/bin/phpunit --exclude-group integration
@@ -43,7 +43,7 @@ unit-8.4: up ## Run unit tests only with PHP 8.4
 unit-8.5: up ## Run unit tests only with PHP 8.5
 	docker-compose run --build --rm php85 vendor/bin/phpunit --exclude-group integration
 
-integration: integration-8.4 ## Run integration tests only with PHP 8.4 (default)
+integration: integration-8.5 ## Run integration tests only with PHP 8.5 (default)
 
 integration-8.1: up ## Run integration tests only with PHP 8.1
 	docker-compose run --build --rm php81 vendor/bin/phpunit --group integration
@@ -60,8 +60,8 @@ integration-8.4: up ## Run integration tests only with PHP 8.4
 integration-8.5: up ## Run integration tests only with PHP 8.5
 	docker-compose run --build --rm php85 vendor/bin/phpunit --group integration
 
-phpstan: ## Run PHPStan static analysis (PHP 8.4 container)
-	docker-compose run --build --rm php84 vendor/bin/phpstan analyse -c phpstan.neon --memory-limit=512M
+phpstan: ## Run PHPStan static analysis (PHP 8.5 container)
+	docker-compose run --build --rm php85 vendor/bin/phpstan analyse -c phpstan.neon --memory-limit=512M
 
 logs: ## Show logs from HTTP server
 	docker-compose logs -f httpbin

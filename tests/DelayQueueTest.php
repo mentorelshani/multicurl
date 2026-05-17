@@ -18,16 +18,13 @@ class DelayQueueTest extends TestCase
 
         $reflection = new \ReflectionClass($manager);
         $delayQueueProperty = $reflection->getProperty('delayQueue');
-        $delayQueueProperty->setAccessible(true);
         $delayQueueSortedProperty = $reflection->getProperty('delayQueueSorted');
-        $delayQueueSortedProperty->setAccessible(true);
         $processDelayQueue = $reflection->getMethod('processDelayQueue');
-        $processDelayQueue->setAccessible(true);
 
-        // Create mock channels
-        $channel1 = $this->createMock(Channel::class);
-        $channel2 = $this->createMock(Channel::class);
-        $channel3 = $this->createMock(Channel::class);
+        // Create channels
+        $channel1 = new Channel();
+        $channel2 = new Channel();
+        $channel3 = new Channel();
 
         // Set up delay queue with unsorted timestamps
         $now = microtime(true);
@@ -63,15 +60,12 @@ class DelayQueueTest extends TestCase
 
         $reflection = new \ReflectionClass($manager);
         $delayQueueProperty = $reflection->getProperty('delayQueue');
-        $delayQueueProperty->setAccessible(true);
         $channelQueueProperty = $reflection->getProperty('channelQueue');
-        $channelQueueProperty->setAccessible(true);
         $processDelayQueue = $reflection->getMethod('processDelayQueue');
-        $processDelayQueue->setAccessible(true);
 
-        // Create mock channels
-        $dueChannel = $this->createMock(Channel::class);
-        $futureChannel = $this->createMock(Channel::class);
+        // Create channels
+        $dueChannel = new Channel();
+        $futureChannel = new Channel();
 
         // Set up delay queue with one due timestamp and one future timestamp
         $now = microtime(true);
@@ -103,7 +97,6 @@ class DelayQueueTest extends TestCase
 
         $reflection = new \ReflectionClass($manager);
         $processDelayQueue = $reflection->getMethod('processDelayQueue');
-        $processDelayQueue->setAccessible(true);
 
         $result = $processDelayQueue->invoke($manager);
         $this->assertNull($result);
@@ -118,18 +111,15 @@ class DelayQueueTest extends TestCase
 
         $reflection = new \ReflectionClass($manager);
         $delayQueueProperty = $reflection->getProperty('delayQueue');
-        $delayQueueProperty->setAccessible(true);
         $channelQueueProperty = $reflection->getProperty('channelQueue');
-        $channelQueueProperty->setAccessible(true);
         $processDelayQueue = $reflection->getMethod('processDelayQueue');
-        $processDelayQueue->setAccessible(true);
 
-        // Create mock channels
-        $channel1 = $this->createMock(Channel::class);
-        $channel2 = $this->createMock(Channel::class);
+        // Create channels
+        $channel1 = new Channel();
+        $channel2 = new Channel();
 
         // Add a channel to the queue first
-        $existingChannel = $this->createMock(Channel::class);
+        $existingChannel = new Channel();
         $channelQueueProperty->setValue($manager, [$existingChannel]);
 
         // Set up delay queue with two due channels, one with unshift=true
@@ -153,4 +143,4 @@ class DelayQueueTest extends TestCase
         // channel2 should be at the end (unshift=false)
         $this->assertSame($channel2, $channelQueue[2]);
     }
-} 
+}

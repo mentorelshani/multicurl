@@ -22,7 +22,6 @@ class SseIntegrationTest extends TestCase
         curl_setopt($ch, CURLOPT_TIMEOUT, 1);
         curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
 
         if ($httpCode !== 200) {
             $this->markTestSkipped(
@@ -102,4 +101,4 @@ class SseIntegrationTest extends TestCase
         $this->assertEquals($maxEvents, $eventCount, 'Exactly maxEvents should have been processed.');
         $this->assertTrue($onReadyCalled, 'onReadyCallback should be called when the user terminates the SSE stream.');
     }
-} 
+}

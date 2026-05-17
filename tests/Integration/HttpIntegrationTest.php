@@ -33,7 +33,6 @@ class HttpIntegrationTest extends TestCase
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         $result = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
 
         $this->assertEquals(200, $httpCode, 'HTTP server should be available');
     }
@@ -228,4 +227,4 @@ class HttpIntegrationTest extends TestCase
         $this->assertCount(10, $processingTimes);
         $this->assertCount(0, $errors);
     }
-} 
+}

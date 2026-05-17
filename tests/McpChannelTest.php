@@ -107,7 +107,6 @@ class McpChannelTest extends TestCase
         // So we'll use reflection to check the headers
         $reflectionClass = new \ReflectionClass(\Maurice\Multicurl\HttpChannel::class);
         $headersProperty = $reflectionClass->getProperty('headers');
-        $headersProperty->setAccessible(true);
 
         $mainHeaders = $headersProperty->getValue($mainChannel);
         $beforeHeaders = $headersProperty->getValue($beforeChannel);
@@ -121,7 +120,6 @@ class McpChannelTest extends TestCase
 
         // Check curl options propagation using reflection
         $curlOptionsProperty = $reflectionClass->getProperty('curlOptions');
-        $curlOptionsProperty->setAccessible(true);
 
         $mainOptions = $curlOptionsProperty->getValue($mainChannel);
         $beforeOptions = $curlOptionsProperty->getValue($beforeChannel);
@@ -438,7 +436,6 @@ class McpChannelTest extends TestCase
         // Use reflection to check headers
         $reflectionClass = new \ReflectionClass(\Maurice\Multicurl\HttpChannel::class);
         $headersProperty = $reflectionClass->getProperty('headers');
-        $headersProperty->setAccessible(true);
         $headers = $headersProperty->getValue($channel);
 
         $this->assertArrayHasKey('authorization', $headers);
@@ -511,7 +508,6 @@ class McpChannelTest extends TestCase
         // Test that we can access the initialization channel via reflection
         $reflectionClass = new \ReflectionClass(McpChannel::class);
         $initChannelProperty = $reflectionClass->getProperty('initializeChannel');
-        $initChannelProperty->setAccessible(true);
         $storedInitChannel = $initChannelProperty->getValue($mainChannel);
 
         $this->assertNotNull($storedInitChannel, "Initialization channel should be stored internally");
@@ -568,7 +564,6 @@ class McpChannelTest extends TestCase
             });
 
             $ref = new \ReflectionProperty(McpChannel::class, 'httpStatusCode');
-            $ref->setAccessible(true);
             $ref->setValue($channel, $statusCode);
 
             $channel->onReady([], '', new Manager());
@@ -593,7 +588,6 @@ class McpChannelTest extends TestCase
             });
 
             $ref = new \ReflectionProperty(McpChannel::class, 'httpStatusCode');
-            $ref->setAccessible(true);
             $ref->setValue($channel, $statusCode);
 
             $channel->onReady([], '', new Manager());
@@ -612,7 +606,6 @@ class McpChannelTest extends TestCase
         // We'll use reflection to check the curl options
         $reflectionClass = new \ReflectionClass(\Maurice\Multicurl\HttpChannel::class);
         $curlOptionsProperty = $reflectionClass->getProperty('curlOptions');
-        $curlOptionsProperty->setAccessible(true);
         $curlOptions = $curlOptionsProperty->getValue($channel);
 
         // McpChannel constructor sets setFollowRedirects(true, 2) by default
@@ -649,7 +642,6 @@ class McpChannelTest extends TestCase
 
         // Check that the session ID header is set
         $headersProperty = $reflectionClass->getProperty('headers');
-        $headersProperty->setAccessible(true);
         $headers = $headersProperty->getValue($channel);
 
         $this->assertArrayHasKey('mcp-session-id', $headers);

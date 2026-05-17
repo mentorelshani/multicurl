@@ -57,6 +57,12 @@ class Channel
     public const TIMEOUT_TOTAL = 2;
 
     /**
+     * Stream abort reason consts
+     */
+    public const STREAM_ABORT_USER = 'user';
+    public const STREAM_ABORT_ERROR = 'error';
+
+    /**
      * URL
      */
     protected string $url = '';
@@ -139,6 +145,26 @@ class Channel
     protected bool $streamAborted = false;
 
     /**
+     * Why the stream was aborted, if applicable.
+     */
+    protected ?string $streamAbortReason = null;
+
+    /**
+     * Error message for stream aborts caused by internal safety limits.
+     */
+    protected ?string $streamErrorMessage = null;
+
+    /**
+     * Maximum buffered stream bytes. Null means unlimited.
+     */
+    protected ?int $maxStreamBufferSize = null;
+
+    /**
+     * Whether the maximum buffered stream size was explicitly configured.
+     */
+    protected bool $maxStreamBufferSizeConfigured = false;
+
+    /**
      * Next channel to be added to the manager when this channel is done
      */
     protected ?Channel $nextChannel = null;
@@ -216,11 +242,73 @@ class Channel
     }
 
     /**
-     * Returns whether the stream was aborted by the client (e.g., onStream callback returned false).
+     * Returns whether the stream was aborted by user code or by an internal stream processing error.
      */
     public function isStreamAborted(): bool
     {
         return $this->streamAborted;
+    }
+
+    /**
+     * Returns the stream abort reason, if the stream was aborted.
+     */
+    public function getStreamAbortReason(): ?string
+    {
+        return $this->streamAbortReason;
+    }
+
+    /**
+     * Returns whether the stream was aborted by user code returning false.
+     */
+    public function isStreamAbortedByUser(): bool
+    {
+        return $this->streamAbortReason === self::STREAM_ABORT_USER;
+    }
+
+    /**
+     * Returns whether the stream was aborted by an internal stream processing error.
+     */
+    public function isStreamAbortedByError(): bool
+    {
+        return $this->streamAbortReason === self::STREAM_ABORT_ERROR;
+    }
+
+    /**
+     * Returns the stream processing error message, if one exists.
+     */
+    public function getStreamErrorMessage(): ?string
+    {
+        return $this->streamErrorMessage;
+    }
+
+    /**
+     * Sets the maximum buffered stream size in bytes. Null disables the limit.
+     */
+    public function setMaxStreamBufferSize(?int $maxBytes): void
+    {
+        $this->assertValidMaxSize($maxBytes);
+        $this->maxStreamBufferSize = $maxBytes;
+        $this->maxStreamBufferSizeConfigured = true;
+    }
+
+    /**
+     * Returns the maximum buffered stream size in bytes. Null means unlimited.
+     */
+    public function getMaxStreamBufferSize(): ?int
+    {
+        return $this->maxStreamBufferSize;
+    }
+
+    /**
+     * Sets the default maximum stream buffer size unless the user already configured it.
+     */
+    protected function setDefaultMaxStreamBufferSize(?int $maxBytes): void
+    {
+        $this->assertValidMaxSize($maxBytes);
+
+        if (!$this->maxStreamBufferSizeConfigured) {
+            $this->maxStreamBufferSize = $maxBytes;
+        }
     }
 
     /**
@@ -499,8 +587,8 @@ class Channel
      */
     public function onError(string $message, int $errno, array $info, Manager $manager): void
     {
-        if ($this->streamAborted && $errno === CURLE_WRITE_ERROR) {
-            // Ignore write errors if the stream was aborted
+        if ($this->isStreamAbortedByUser() && $errno === CURLE_WRITE_ERROR) {
+            // Ignore write errors if the stream was aborted by user code.
             return;
         }
 
@@ -515,7 +603,8 @@ class Channel
      * Called from Manager when data is received for streaming channels
      *
      * If this method returns any value other than strlen($data), the connection will be aborted.
-     * In this case a cURL error 23 (CURLE_WRITE_ERROR) will be returned to the Manager, which we will ignore.
+     * User-requested aborts are treated as successful completion. Internal stream processing errors
+     * are reported through onError with cURL error 23 (CURLE_WRITE_ERROR).
      *
      * @param string $data The received data chunk
      * @return int Number of bytes written (must return strlen($data) to continue)
@@ -529,16 +618,21 @@ class Channel
             // we check here for streamable because it could have been disabled after the stream was
             // created and we cannot disable cURL's CURLOPT_WRITEFUNCTION after the request has been sent
 
-            if ($this->onStreamCb === null) {
-                return strlen($data);
-            }
-
-            $res = call_user_func($this->onStreamCb, $this, $this->getStream(), $manager);
-            if ($res === false) {
-                $this->streamAborted = true;
-                return 0; // abort connection
+            if ($this->onStreamCb !== null) {
+                $res = call_user_func($this->onStreamCb, $this, $this->getStream(), $manager);
+                if ($res === false) {
+                    if (!$this->isStreamAborted()) {
+                        $this->abortStreamByUser();
+                    }
+                    return 0; // abort connection
+                }
             }
         }
+
+        if (!$this->enforceMaxStreamBufferSize()) {
+            return 0; // abort connection
+        }
+
         return strlen($data);
     }
 
@@ -546,8 +640,50 @@ class Channel
     {
         $this->stream = null;
         $this->streamAborted = false;
+        $this->streamAbortReason = null;
+        $this->streamErrorMessage = null;
         $this->setCurlHandle(null);
         $this->nextChannel = null;
         $this->beforeChannel = null;
+    }
+
+    protected function abortStreamByUser(): void
+    {
+        $this->streamAborted = true;
+        $this->streamAbortReason = self::STREAM_ABORT_USER;
+        $this->streamErrorMessage = null;
+    }
+
+    protected function abortStreamWithError(string $message): void
+    {
+        $this->streamAborted = true;
+        $this->streamAbortReason = self::STREAM_ABORT_ERROR;
+        $this->streamErrorMessage = $message;
+    }
+
+    protected function enforceMaxStreamBufferSize(): bool
+    {
+        if ($this->maxStreamBufferSize === null) {
+            return true;
+        }
+
+        $bufferSize = $this->getStream()->getSize();
+        if ($bufferSize <= $this->maxStreamBufferSize) {
+            return true;
+        }
+
+        $this->abortStreamWithError(sprintf(
+            'Stream buffer exceeded maximum size of %d bytes',
+            $this->maxStreamBufferSize
+        ));
+
+        return false;
+    }
+
+    protected function assertValidMaxSize(?int $maxBytes): void
+    {
+        if ($maxBytes !== null && $maxBytes < 0) {
+            throw new \InvalidArgumentException('Maximum stream size must be null or greater than or equal to zero');
+        }
     }
 }

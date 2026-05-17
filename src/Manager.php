@@ -265,11 +265,13 @@ class Manager
      */
     protected function dispatchChannelCompletion(Channel $channel, CurlHandle $ch, array $multiInfo, array $info): void
     {
-        if ($multiInfo['result'] === CURLE_OK || ($multiInfo['result'] === CURLE_WRITE_ERROR && $channel->isStreamAborted())) {
+        if ($multiInfo['result'] === CURLE_WRITE_ERROR && $channel->isStreamAbortedByError()) {
+            $channel->onError($channel->getStreamErrorMessage() ?? curl_strerror($multiInfo['result']), $multiInfo['result'], $info, $this);
+        } elseif ($multiInfo['result'] === CURLE_OK || ($multiInfo['result'] === CURLE_WRITE_ERROR && $channel->isStreamAbortedByUser())) {
             $content = curl_multi_getcontent($ch);
 
             $channel->onReady($info, $content ?? '', $this);
-        } else if ($multiInfo['result'] === CURLE_OPERATION_TIMEOUTED) {
+        } elseif ($multiInfo['result'] === CURLE_OPERATION_TIMEOUTED) {
             if ($info['connect_time'] > 0 && $info['pretransfer_time'] > 0) {
                 $channel->onTimeout(Channel::TIMEOUT_TOTAL, (int)($info['total_time'] * 1000), $this);
             } else {
@@ -434,7 +436,6 @@ class Manager
             curl_multi_remove_handle($this->mh, $ch);
         }
 
-        curl_close($ch);
         $channel->setCurlHandle(null);
 
         return true;

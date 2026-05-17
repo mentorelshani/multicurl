@@ -287,8 +287,11 @@ make test-8.2
 # Run all tests with PHP 8.3
 make test-8.3
 
-# Run all tests with PHP 8.4 (default)
+# Run all tests with PHP 8.4
 make test-8.4
+
+# Run all tests with PHP 8.5 (default)
+make test-8.5
 
 # or simply
 make test
@@ -304,7 +307,7 @@ make unit-8.3
 make integration-8.2
 ```
 
-To run tests with all supported PHP versions (8.1, 8.2, 8.3, 8.4):
+To run tests with all supported PHP versions (8.1, 8.2, 8.3, 8.4, 8.5):
 
 ```bash
 make test-all

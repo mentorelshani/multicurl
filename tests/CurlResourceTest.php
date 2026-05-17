@@ -24,7 +24,6 @@ class CurlResourceTest extends TestCase
         // Access private method
         $reflection = new \ReflectionClass($manager);
         $createCurlHandle = $reflection->getMethod('createCurlHandleFromChannel');
-        $createCurlHandle->setAccessible(true);
 
         // Call method
         $curlHandle = $createCurlHandle->invoke($manager, $channel);
@@ -36,8 +35,6 @@ class CurlResourceTest extends TestCase
         $info = curl_getinfo($curlHandle);
         $this->assertEquals('https://example.com', $info['url']);
 
-        // Clean up
-        curl_close($curlHandle);
     }
 
     /**
@@ -51,7 +48,6 @@ class CurlResourceTest extends TestCase
         // Access static method
         $reflection = new \ReflectionClass(Manager::class);
         $toHandleIdentifier = $reflection->getMethod('toHandleIdentifier');
-        $toHandleIdentifier->setAccessible(true);
 
         // Get identifier
         $identifier = $toHandleIdentifier->invoke(null, $ch);
@@ -64,8 +60,6 @@ class CurlResourceTest extends TestCase
         $identifier2 = $toHandleIdentifier->invoke(null, $ch);
         $this->assertEquals($identifier, $identifier2);
 
-        // Clean up
-        curl_close($ch);
     }
 
     /**
@@ -82,11 +76,8 @@ class CurlResourceTest extends TestCase
         // Access private methods/properties
         $reflection = new \ReflectionClass($manager);
         $createCurlHandle = $reflection->getMethod('createCurlHandleFromChannel');
-        $createCurlHandle->setAccessible(true);
         $toHandleIdentifier = $reflection->getMethod('toHandleIdentifier');
-        $toHandleIdentifier->setAccessible(true);
         $resourceChannelLookupProperty = $reflection->getProperty('resourceChannelLookup');
-        $resourceChannelLookupProperty->setAccessible(true);
 
         // Create curl handle
         $ch = $createCurlHandle->invoke($manager, $channel);
@@ -100,8 +91,6 @@ class CurlResourceTest extends TestCase
         $this->assertArrayHasKey($id, $lookup);
         $this->assertSame($channel, $lookup[$id]);
 
-        // Clean up
-        curl_close($ch);
     }
 
     /**
@@ -114,9 +103,7 @@ class CurlResourceTest extends TestCase
         // Access private methods/properties
         $reflection = new \ReflectionClass($manager);
         $channelQueueProperty = $reflection->getProperty('channelQueue');
-        $channelQueueProperty->setAccessible(true);
         $addNCurlResources = $reflection->getMethod('addNCurlResourcesToMultiCurl');
-        $addNCurlResources->setAccessible(true);
 
         // Create channels
         $channel1 = new Channel();
@@ -129,7 +116,6 @@ class CurlResourceTest extends TestCase
 
         // Initialize mh property
         $mhProp = $reflection->getProperty('mh');
-        $mhProp->setAccessible(true);
         $mhProp->setValue($manager, curl_multi_init());
 
         // Call method to add 1 resource
@@ -144,4 +130,4 @@ class CurlResourceTest extends TestCase
         // Clean up
         curl_multi_close($mhProp->getValue($manager));
     }
-} 
+}

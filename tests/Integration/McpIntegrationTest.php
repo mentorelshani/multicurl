@@ -649,7 +649,6 @@ class McpIntegrationTest extends TestCase
         // Check that curl options are properly set for redirect handling
         $reflectionClass = new \ReflectionClass(\Maurice\Multicurl\HttpChannel::class);
         $curlOptionsProperty = $reflectionClass->getProperty('curlOptions');
-        $curlOptionsProperty->setAccessible(true);
         $curlOptions = $curlOptionsProperty->getValue($channel);
 
         $this->assertArrayHasKey(CURLOPT_FOLLOWLOCATION, $curlOptions);
@@ -661,7 +660,6 @@ class McpIntegrationTest extends TestCase
 
         // Check that headers are properly set for redirect preservation
         $headersProperty = $reflectionClass->getProperty('headers');
-        $headersProperty->setAccessible(true);
         $headers = $headersProperty->getValue($channel);
 
         $this->assertArrayHasKey('authorization', $headers);
