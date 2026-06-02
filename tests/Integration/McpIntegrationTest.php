@@ -9,6 +9,7 @@ use Maurice\Multicurl\McpChannel;
 use Maurice\Multicurl\Mcp\RpcMessage;
 use PHPUnit\Framework\TestCase;
 use PHPUnit\Framework\Attributes\Group;
+use stdClass;
 
 /**
  * Real integration tests for MCP (Model Context Protocol) functionality
@@ -73,10 +74,10 @@ class McpIntegrationTest extends TestCase
 
         // If we got a successful response, validate it
         if ($initResponse !== null) {
-            $this->assertIsArray($initResponse, 'Initialize response should be an array');
-            $this->assertArrayHasKey('protocolVersion', $initResponse, 'Response should contain protocol version');
-            $this->assertArrayHasKey('capabilities', $initResponse, 'Response should contain server capabilities');
-            $this->assertArrayHasKey('serverInfo', $initResponse, 'Response should contain server info');
+            $this->assertInstanceOf(stdClass::class, $initResponse, 'Initialize response should be an object');
+            $this->assertTrue(property_exists($initResponse, 'protocolVersion'), 'Response should contain protocol version');
+            $this->assertTrue(property_exists($initResponse, 'capabilities'), 'Response should contain server capabilities');
+            $this->assertTrue(property_exists($initResponse, 'serverInfo'), 'Response should contain server info');
         }
 
         $this->assertTrue(true, 'MCP initialization integration test completed');
@@ -111,7 +112,7 @@ class McpIntegrationTest extends TestCase
             if ($message->isResponse() && !$message->isError() && $message->getResult() !== null) {
                 $result = $message->getResult();
                 // Check if this is a tools/list response (has 'tools' key)
-                if (is_array($result) && array_key_exists('tools', $result)) {
+                if ($result instanceof stdClass && property_exists($result, 'tools')) {
                     $toolsResponse = $result;
                 }
             }
@@ -136,15 +137,16 @@ class McpIntegrationTest extends TestCase
 
         // If we got a successful response, validate it
         if ($toolsResponse !== null) {
-            $this->assertIsArray($toolsResponse, 'Tools response should be an array');
-            $this->assertArrayHasKey('tools', $toolsResponse, 'Response should contain tools array');
-            $this->assertIsArray($toolsResponse['tools'], 'Tools should be an array');
+            $this->assertInstanceOf(stdClass::class, $toolsResponse, 'Tools response should be an object');
+            $this->assertTrue(property_exists($toolsResponse, 'tools'), 'Response should contain tools array');
+            $this->assertIsArray($toolsResponse->tools, 'Tools should be an array');
 
             // Verify tool structure if tools are present
-            if (!empty($toolsResponse['tools'])) {
-                $firstTool = $toolsResponse['tools'][0];
-                $this->assertArrayHasKey('name', $firstTool, 'Tool should have a name');
-                $this->assertArrayHasKey('description', $firstTool, 'Tool should have a description');
+            if (!empty($toolsResponse->tools)) {
+                $firstTool = $toolsResponse->tools[0];
+                $this->assertInstanceOf(stdClass::class, $firstTool, 'Tool should be an object');
+                $this->assertTrue(property_exists($firstTool, 'name'), 'Tool should have a name');
+                $this->assertTrue(property_exists($firstTool, 'description'), 'Tool should have a description');
             }
         }
 
@@ -178,7 +180,7 @@ class McpIntegrationTest extends TestCase
             if ($message->isResponse() && !$message->isError() && $message->getResult() !== null) {
                 $result = $message->getResult();
                 // Check if this is a prompts/list response (has 'prompts' key)
-                if (is_array($result) && array_key_exists('prompts', $result)) {
+                if ($result instanceof stdClass && property_exists($result, 'prompts')) {
                     $promptsResponse = $result;
                 }
             }
@@ -203,15 +205,16 @@ class McpIntegrationTest extends TestCase
 
         // If we got a successful response, validate it
         if ($promptsResponse !== null) {
-            $this->assertIsArray($promptsResponse, 'Prompts response should be an array');
-            $this->assertArrayHasKey('prompts', $promptsResponse, 'Response should contain prompts array');
-            $this->assertIsArray($promptsResponse['prompts'], 'Prompts should be an array');
+            $this->assertInstanceOf(stdClass::class, $promptsResponse, 'Prompts response should be an object');
+            $this->assertTrue(property_exists($promptsResponse, 'prompts'), 'Response should contain prompts array');
+            $this->assertIsArray($promptsResponse->prompts, 'Prompts should be an array');
 
             // Verify prompt structure if prompts are present
-            if (!empty($promptsResponse['prompts'])) {
-                $firstPrompt = $promptsResponse['prompts'][0];
-                $this->assertArrayHasKey('name', $firstPrompt, 'Prompt should have a name');
-                $this->assertArrayHasKey('description', $firstPrompt, 'Prompt should have a description');
+            if (!empty($promptsResponse->prompts)) {
+                $firstPrompt = $promptsResponse->prompts[0];
+                $this->assertInstanceOf(stdClass::class, $firstPrompt, 'Prompt should be an object');
+                $this->assertTrue(property_exists($firstPrompt, 'name'), 'Prompt should have a name');
+                $this->assertTrue(property_exists($firstPrompt, 'description'), 'Prompt should have a description');
             }
         }
 
@@ -302,9 +305,9 @@ class McpIntegrationTest extends TestCase
             $channel->setOnMcpMessageCallback(function (RpcMessage $message, McpChannel $channel, Manager $manager) use (&$responses, $requestId): bool {
                 if ($message->isResponse()) {
                     $result = $message->getResult();
-                    if (is_array($result) && (
-                        array_key_exists('tools', $result) ||
-                        array_key_exists('prompts', $result)
+                    if ($result instanceof stdClass && (
+                        property_exists($result, 'tools') ||
+                        property_exists($result, 'prompts')
                     )) {
                         $responses[$requestId] = $result;
                         return false; // Stop processing messages
@@ -513,7 +516,7 @@ class McpIntegrationTest extends TestCase
             if ($message->isResponse() && !$message->isError() && $message->getResult() !== null) {
                 $result = $message->getResult();
                 // Check if this is a tools/list response (has 'tools' key)
-                if (is_array($result) && array_key_exists('tools', $result)) {
+                if ($result instanceof stdClass && property_exists($result, 'tools')) {
                     $finalSessionId = $channel->getSessionId();
                 }
             }
@@ -613,7 +616,7 @@ class McpIntegrationTest extends TestCase
 
             if ($message->isResponse() && !$message->isError() && $message->getResult() !== null) {
                 $result = $message->getResult();
-                if (is_array($result) && array_key_exists('tools', $result)) {
+                if ($result instanceof stdClass && property_exists($result, 'tools')) {
                     $finalResponse = $result;
                 }
             }

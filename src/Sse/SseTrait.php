@@ -63,7 +63,7 @@ trait SseTrait
     /**
      * Sets whether the channel is streamable
      */
-    abstract public function setStreamable(bool $streamable): void;
+    abstract public function setStreamable(bool $streamable = true): void;
 
     /**
      * Gets the stream object for buffer manipulation

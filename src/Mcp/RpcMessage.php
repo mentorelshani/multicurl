@@ -61,10 +61,8 @@ class RpcMessage
 
     /**
      * Error for error responses
-     *
-     * @var array<string, mixed>|null
      */
-    protected ?array $error = null;
+    protected mixed $error = null;
 
     /**
      * Message ID for requests and responses (null for notifications)
@@ -325,13 +323,12 @@ class RpcMessage
     {
         $rpcMessage = new self();
         $rpcMessage->type = self::TYPE_ERROR;
-        $rpcMessage->error = [
-            'code' => $code,
-            'message' => $message
-        ];
+        $rpcMessage->error = new \stdClass();
+        $rpcMessage->error->code = $code;
+        $rpcMessage->error->message = $message;
 
         if ($data !== null) {
-            $rpcMessage->error['data'] = $data;
+            $rpcMessage->error->data = $data;
         }
 
         $rpcMessage->id = $id;
@@ -344,50 +341,104 @@ class RpcMessage
      */
     public static function fromJson(string $json): self
     {
-        $data = json_decode($json, true);
-        if ($data === null) {
-            throw new \InvalidArgumentException('Invalid JSON: ' . json_last_error_msg());
+        try {
+            $data = json_decode($json, false, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            throw new \InvalidArgumentException('Invalid JSON: ' . $e->getMessage(), 0, $e);
         }
 
-        return self::fromArray($data);
+        if (!$data instanceof \stdClass) {
+            throw new \InvalidArgumentException('Invalid JSON-RPC message: ' . $json);
+        }
+
+        return self::fromDecodedJson($data);
     }
 
     /**
-     * Parse array into RpcMessage
-     *
-     * @param array<string, mixed> $data
+     * Parse a decoded JSON-RPC object into RpcMessage
      */
-    public static function fromArray(array $data): self
+    public static function fromDecodedJson(\stdClass $data): self
     {
         $message = new self();
 
-        // Verify JSON-RPC version
-        if (!isset($data['jsonrpc']) || $data['jsonrpc'] !== '2.0') {
+        if (!property_exists($data, 'jsonrpc') || $data->jsonrpc !== '2.0') {
             throw new \InvalidArgumentException('Invalid or no JSON-RPC version in message: ' . json_encode($data));
         }
 
-        // Determine message type
-        if (isset($data['method'])) {
-            if (isset($data['id'])) {
+        $hasMethod = property_exists($data, 'method');
+        $hasResult = property_exists($data, 'result');
+        $hasError = property_exists($data, 'error');
+
+        if ($hasMethod) {
+            if ($hasResult || $hasError) {
+                throw new \InvalidArgumentException('Invalid JSON-RPC request message: ' . json_encode($data));
+            }
+
+            if (!is_string($data->method) || $data->method === '') {
+                throw new \InvalidArgumentException('Invalid JSON-RPC method in message: ' . json_encode($data));
+            }
+
+            if (property_exists($data, 'params') && !is_array($data->params) && !$data->params instanceof \stdClass) {
+                throw new \InvalidArgumentException('Invalid JSON-RPC params in message: ' . json_encode($data));
+            }
+
+            if (property_exists($data, 'id')) {
+                self::assertValidId($data->id, $data);
                 $message->type = self::TYPE_REQUEST;
-                $message->id = $data['id'];
+                $message->id = $data->id;
             } else {
                 $message->type = self::TYPE_NOTIFICATION;
             }
-            $message->method = $data['method'];
-            $message->params = $data['params'] ?? null;
+            $message->method = $data->method;
+            $message->params = property_exists($data, 'params') ? $data->params : null;
         } else {
-            if (isset($data['error'])) {
-                $message->type = self::TYPE_ERROR;
-                $message->error = $data['error'];
-            } else {
-                $message->type = self::TYPE_RESPONSE;
-                $message->result = $data['result'] ?? null;
+            if ($hasResult === $hasError) {
+                throw new \InvalidArgumentException('Invalid JSON-RPC response message: ' . json_encode($data));
             }
-            $message->id = $data['id'] ?? null;
+
+            if ($hasError) {
+                self::assertValidError($data->error, $data);
+                $message->type = self::TYPE_ERROR;
+                $message->error = $data->error;
+            } else {
+                if (!property_exists($data, 'id')) {
+                    throw new \InvalidArgumentException('Invalid JSON-RPC response message: ' . json_encode($data));
+                }
+                $message->type = self::TYPE_RESPONSE;
+                $message->result = $data->result;
+            }
+
+            if (property_exists($data, 'id')) {
+                self::assertValidId($data->id, $data);
+                $message->id = $data->id;
+            }
         }
 
         return $message;
+    }
+
+    private static function assertValidId(mixed $id, \stdClass $data): void
+    {
+        if ($id === null || is_string($id) || is_int($id)) {
+            return;
+        }
+
+        throw new \InvalidArgumentException('Invalid JSON-RPC id in message: ' . json_encode($data));
+    }
+
+    private static function assertValidError(mixed $error, \stdClass $data): void
+    {
+        if (
+            $error instanceof \stdClass &&
+            property_exists($error, 'code') &&
+            is_int($error->code) &&
+            property_exists($error, 'message') &&
+            is_string($error->message)
+        ) {
+            return;
+        }
+
+        throw new \InvalidArgumentException('Invalid JSON-RPC error in message: ' . json_encode($data));
     }
 
     /**
@@ -473,10 +524,8 @@ class RpcMessage
 
     /**
      * Get error
-     *
-     * @return array<string, mixed>|null
      */
-    public function getError(): ?array
+    public function getError(): mixed
     {
         return $this->error;
     }
@@ -528,11 +577,15 @@ class RpcMessage
 
     public function getErrorMessage(): string
     {
-        return $this->error['message'] ?? '';
+        $message = $this->error instanceof \stdClass && property_exists($this->error, 'message') ? $this->error->message : '';
+
+        return is_string($message) ? $message : '';
     }
 
     public function getErrorCode(): int
     {
-        return $this->error['code'] ?? 0;
+        $code = $this->error instanceof \stdClass && property_exists($this->error, 'code') ? $this->error->code : 0;
+
+        return is_int($code) ? $code : 0;
     }
 }
