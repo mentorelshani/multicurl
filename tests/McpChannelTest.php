@@ -354,6 +354,26 @@ class McpChannelTest extends TestCase
         $this->assertIsArray($messages[1]->getResult()->items);
     }
 
+    public function testProcessJsonMessageStopsBatchWhenCallbackReturnsFalse(): void
+    {
+        $channel = new McpChannel('file:///dev/null', RpcMessage::toolsListRequest());
+        $messages = [];
+
+        $channel->setOnMcpMessageCallback(function (RpcMessage $message) use (&$messages): bool {
+            $messages[] = $message;
+            return false;
+        });
+
+        $result = $this->processJsonMessage(
+            $channel,
+            '[{"jsonrpc":"2.0","id":"first","result":{}},{"jsonrpc":"2.0","id":"second","result":{}}]'
+        );
+
+        $this->assertFalse($result);
+        $this->assertCount(1, $messages);
+        $this->assertSame('first', $messages[0]->getId());
+    }
+
     public function testProcessJsonMessagePreservesErrorJsonShape(): void
     {
         $channel = new McpChannel('file:///dev/null', RpcMessage::toolsListRequest());
