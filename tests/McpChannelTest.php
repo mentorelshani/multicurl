@@ -442,6 +442,34 @@ class McpChannelTest extends TestCase
         $this->assertInstanceOf(\InvalidArgumentException::class, $exception);
     }
 
+    public function testProcessJsonMessageContinuesBatchAfterInvalidItem(): void
+    {
+        $channel = new McpChannel('file:///dev/null', RpcMessage::toolsListRequest());
+        $messages = [];
+        $exception = null;
+
+        $channel->setOnMcpMessageCallback(function (RpcMessage $message) use (&$messages): bool {
+            $messages[] = $message;
+            return true;
+        });
+        $channel->setOnExceptionCallback(function (\Exception $caught) use (&$exception): void {
+            $exception = $caught;
+        });
+
+        $result = $this->processJsonMessage(
+            $channel,
+            '[{"jsonrpc":"2.0","method":null,"id":"invalid"},{"jsonrpc":"2.0","id":"valid","result":{"ok":true}}]'
+        );
+
+        $this->assertFalse($result);
+        $this->assertCount(1, $messages);
+        $this->assertSame('valid', $messages[0]->getId());
+        $this->assertTrue($messages[0]->isResponse());
+        $this->assertInstanceOf(stdClass::class, $messages[0]->getResult());
+        $this->assertTrue($messages[0]->getResult()->ok);
+        $this->assertInstanceOf(\InvalidArgumentException::class, $exception);
+    }
+
     public function testProcessJsonMessageIgnoresInvalidJson(): void
     {
         $channel = new McpChannel('file:///dev/null', RpcMessage::toolsListRequest());

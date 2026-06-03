@@ -372,8 +372,8 @@ class McpChannel extends HttpChannel
                     }
 
                     $message = RpcMessage::fromDecodedJson($item);
-                    $res = $res && $this->onMcpMessage($message, $manager);
-                    if ($message->isError()) {
+                    $messageResult = $this->onMcpMessage($message, $manager);
+                    if ($messageResult === false || $message->isError()) {
                         // if the message is an error the overall result will be false
                         $res = false;
                     }
