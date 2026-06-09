@@ -4,6 +4,7 @@ declare(strict_types = 1);
 namespace Maurice\Multicurl\Tests;
 
 use InvalidArgumentException;
+use Maurice\Multicurl\Mcp\JsonObject;
 use Maurice\Multicurl\Mcp\RpcMessage;
 use PHPUnit\Framework\TestCase;
 use stdClass;
@@ -39,8 +40,8 @@ class RpcMessageTest extends TestCase
         $this->assertTrue($message->isError());
         $this->assertSame(-32603, $message->getErrorCode());
         $this->assertSame('Internal error', $message->getErrorMessage());
-        $this->assertInstanceOf(stdClass::class, $message->getError());
-        $this->assertSame(['detail' => 'x'], $message->getError()->data);
+        $this->assertInstanceOf(JsonObject::class, $message->getError());
+        $this->assertSame(['detail' => 'x'], $message->getError()['data']);
         $this->assertSame('9', $message->getId());
     }
 
@@ -179,8 +180,8 @@ class RpcMessageTest extends TestCase
         $this->assertTrue($message->isRequest());
         $this->assertSame('tools/list', $message->getMethod());
         $this->assertSame('1', $message->getId());
-        $this->assertInstanceOf(stdClass::class, $message->getParams());
-        $this->assertSame('bar', $message->getParams()->foo);
+        $this->assertInstanceOf(JsonObject::class, $message->getParams());
+        $this->assertSame('bar', $message->getParams()['foo']);
     }
 
     public function testFromJsonPreservesResultJsonShape(): void
@@ -190,10 +191,39 @@ class RpcMessageTest extends TestCase
         );
 
         $result = $message->getResult();
-        $this->assertInstanceOf(stdClass::class, $result);
-        $this->assertInstanceOf(stdClass::class, $result->inputSchema);
-        $this->assertInstanceOf(stdClass::class, $result->inputSchema->properties);
-        $this->assertIsArray($result->inputSchema->required);
+        $this->assertInstanceOf(JsonObject::class, $result);
+        $this->assertInstanceOf(JsonObject::class, $result['inputSchema']);
+        $this->assertInstanceOf(JsonObject::class, $result['inputSchema']['properties']);
+        $this->assertIsArray($result['inputSchema']['required']);
+    }
+
+    public function testParsedResultSupportsArrayAndObjectAccess(): void
+    {
+        // Backward-compatibility guarantee: parsed objects behave like the
+        // pre-3.0 associative arrays (array access, isset, foreach, count)
+        // while also supporting object access.
+        $message = RpcMessage::fromJson(
+            '{"jsonrpc":"2.0","id":"1","result":{"inputSchema":{"type":"object","properties":{}}}}'
+        );
+
+        $result = $message->getResult();
+        $this->assertInstanceOf(JsonObject::class, $result);
+
+        // array access (the canonical, pre-3.0 compatible API)
+        $this->assertSame('object', $result['inputSchema']['type']);
+        $this->assertTrue(isset($result['inputSchema']));
+        $this->assertFalse(isset($result['missing']));
+        $this->assertCount(1, $result);
+
+        $keys = [];
+        foreach ($result as $key => $value) {
+            $keys[] = $key;
+        }
+        $this->assertSame(['inputSchema'], $keys);
+
+        // object access also works at runtime (PR style)
+        /** @phpstan-ignore property.notFound */
+        $this->assertSame('object', $result->inputSchema->type);
     }
 
     public function testFromJsonPreservesParamsJsonShape(): void
@@ -203,10 +233,10 @@ class RpcMessageTest extends TestCase
         );
 
         $params = $message->getParams();
-        $this->assertInstanceOf(stdClass::class, $params);
-        $this->assertSame('test', $params->name);
-        $this->assertInstanceOf(stdClass::class, $params->arguments);
-        $this->assertIsArray($params->tags);
+        $this->assertInstanceOf(JsonObject::class, $params);
+        $this->assertSame('test', $params['name']);
+        $this->assertInstanceOf(JsonObject::class, $params['arguments']);
+        $this->assertIsArray($params['tags']);
     }
 
     public function testFromJsonPreservesTopLevelParamsAndResultArrays(): void
@@ -233,12 +263,12 @@ class RpcMessageTest extends TestCase
         $this->assertSame('Invalid params', $message->getErrorMessage());
 
         $error = $message->getError();
-        $this->assertInstanceOf(stdClass::class, $error);
-        $this->assertSame(-32602, $error->code);
-        $this->assertSame('Invalid params', $error->message);
-        $this->assertInstanceOf(stdClass::class, $error->data);
-        $this->assertInstanceOf(stdClass::class, $error->data->details);
-        $this->assertIsArray($error->data->items);
+        $this->assertInstanceOf(JsonObject::class, $error);
+        $this->assertSame(-32602, $error['code']);
+        $this->assertSame('Invalid params', $error['message']);
+        $this->assertInstanceOf(JsonObject::class, $error['data']);
+        $this->assertInstanceOf(JsonObject::class, $error['data']['details']);
+        $this->assertIsArray($error['data']['items']);
     }
 
     public function testFromJsonPreservesNumericObjectKeysAsObject(): void
@@ -248,8 +278,8 @@ class RpcMessageTest extends TestCase
         );
 
         $result = $message->getResult();
-        $this->assertInstanceOf(stdClass::class, $result->map);
-        $this->assertSame(['0' => 'x'], get_object_vars($result->map));
+        $this->assertInstanceOf(JsonObject::class, $result->map);
+        $this->assertSame(['0' => 'x'], $result->map->toArray());
         $this->assertIsArray($result->list);
 
         $roundTripped = json_decode($message->toJson(), false, 512, JSON_THROW_ON_ERROR);
@@ -264,8 +294,8 @@ class RpcMessageTest extends TestCase
         );
         $params = $request->getParams();
 
-        $this->assertInstanceOf(stdClass::class, $params->map);
-        $this->assertSame(['0' => 'x'], get_object_vars($params->map));
+        $this->assertInstanceOf(JsonObject::class, $params->map);
+        $this->assertSame(['0' => 'x'], $params->map->toArray());
         $this->assertIsArray($params->list);
 
         $errorResponse = RpcMessage::fromJson(
@@ -273,8 +303,8 @@ class RpcMessageTest extends TestCase
         );
         $error = $errorResponse->getError();
 
-        $this->assertInstanceOf(stdClass::class, $error->data->map);
-        $this->assertSame(['0' => 'x'], get_object_vars($error->data->map));
+        $this->assertInstanceOf(JsonObject::class, $error->data->map);
+        $this->assertSame(['0' => 'x'], $error->data->map->toArray());
         $this->assertIsArray($error->data->list);
     }
 
@@ -285,7 +315,7 @@ class RpcMessageTest extends TestCase
         $message = RpcMessage::fromJson($json);
         $result = $message->getResult();
 
-        $this->assertInstanceOf(stdClass::class, $result->tools[0]->inputSchema->properties->datapoints->properties);
+        $this->assertInstanceOf(JsonObject::class, $result->tools[0]->inputSchema->properties->datapoints->properties);
 
         $encoded = $message->toJson();
         $roundTripped = json_decode($encoded, false, 512, JSON_THROW_ON_ERROR);
@@ -367,8 +397,8 @@ class RpcMessageTest extends TestCase
         $this->assertTrue($message->isNotification());
         $this->assertSame('notifications/initialized', $message->getMethod());
         $this->assertNull($message->getId());
-        $this->assertInstanceOf(stdClass::class, $message->getParams());
-        $this->assertSame('ready', $message->getParams()->status);
+        $this->assertInstanceOf(JsonObject::class, $message->getParams());
+        $this->assertSame('ready', $message->getParams()['status']);
     }
 
     public function testFromDecodedJsonParsesResponseMessage(): void
@@ -379,8 +409,8 @@ class RpcMessageTest extends TestCase
 
         $this->assertTrue($message->isResponse());
         $this->assertSame(2, $message->getId());
-        $this->assertInstanceOf(stdClass::class, $message->getResult());
-        $this->assertSame(1, $message->getResult()->x);
+        $this->assertInstanceOf(JsonObject::class, $message->getResult());
+        $this->assertSame(1, $message->getResult()['x']);
     }
 
     public function testFromDecodedJsonParsesErrorMessage(): void

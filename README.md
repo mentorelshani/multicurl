@@ -214,17 +214,16 @@ $listToolsChannel->setOnMcpMessageCallback(function (RpcMessage $message, McpCha
     echo "Received MCP Message (ID: {$message->getId()}, Type: {$message->getType()})\n";
 
     if ($message->isResponse() && $message->getId() === $channel->getRpcMessage()->getId()) { // Response to tools/list request
-        $result = $message->getResult();
-        if ($result instanceof \stdClass && isset($result->tools)) {
+        if ($message->getResult() && isset($message->getResult()['tools'])) {
             echo "Available Tools:\n";
-            foreach ($result->tools as $tool) {
+            foreach ($message->getResult()['tools'] as $tool) {
                 // Build function-like definition with parameters
-                $functionDef = $tool->name;
-                if (isset($tool->inputSchema) && isset($tool->inputSchema->properties)) {
+                $functionDef = $tool['name'];
+                if (isset($tool['inputSchema']) && isset($tool['inputSchema']['properties'])) {
                     $params = [];
-                    foreach ($tool->inputSchema->properties as $paramName => $paramProps) {
-                        $type = $paramProps->type ?? 'mixed';
-                        $required = in_array($paramName, $tool->inputSchema->required ?? [], true) ? '' : '?';
+                    foreach ($tool['inputSchema']['properties'] as $paramName => $paramProps) {
+                        $type = $paramProps['type'] ?? 'mixed';
+                        $required = in_array($paramName, $tool['inputSchema']['required'] ?? []) ? '' : '?';
                         $params[] = "{$type}{$required} \\${$paramName}";
                     }
                     $functionDef .= "(" . implode(', ', $params) . ")";
@@ -233,22 +232,20 @@ $listToolsChannel->setOnMcpMessageCallback(function (RpcMessage $message, McpCha
                 }
 
                 echo "- Name: {$functionDef}\n";
-                echo "  Description: ".($tool->description ?? 'No description available')."\n";
+                echo "  Description: ".($tool['description'] ?? 'No description available')."\n";
 
                 // Optionally print inputSchema
-                // echo "  Input Schema: " . json_encode($tool->inputSchema) . "\n";
+                // echo "  Input Schema: " . json_encode($tool['inputSchema']) . "\n";
             }
-        } elseif ($message->isError()) {
-            $error = $message->getError();
-            echo "Error listing tools: {$error->message} (Code: {$error->code})\n";
+        } elseif ($message->getError()) {
+            echo "Error listing tools: {$message->getError()['message']} (Code: {$message->getError()['code']})\n";
         } else {
             echo "Unexpected response format for tools/list\n";
         }
 
         return false; // abort connection
     } else if ($message->isError()) {
-        $error = $message->getError();
-        echo "Error during tools listing: {$error->message} (Code: {$error->code})\n";
+        echo "Error during tools listing: {$message->getError()['message']} (Code: {$message->getError()['code']})\n";
     }
 });
 

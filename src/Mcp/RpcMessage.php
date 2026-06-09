@@ -321,16 +321,18 @@ class RpcMessage
      */
     public static function error(int $code, string $message, mixed $data = null, mixed $id = null): self
     {
-        $rpcMessage = new self();
-        $rpcMessage->type = self::TYPE_ERROR;
-        $rpcMessage->error = new \stdClass();
-        $rpcMessage->error->code = $code;
-        $rpcMessage->error->message = $message;
+        $error = [
+            'code' => $code,
+            'message' => $message,
+        ];
 
         if ($data !== null) {
-            $rpcMessage->error->data = $data;
+            $error['data'] = $data;
         }
 
+        $rpcMessage = new self();
+        $rpcMessage->type = self::TYPE_ERROR;
+        $rpcMessage->error = JsonObject::fromArray($error);
         $rpcMessage->id = $id;
 
         return $rpcMessage;
@@ -390,7 +392,7 @@ class RpcMessage
                 $message->type = self::TYPE_NOTIFICATION;
             }
             $message->method = $data->method;
-            $message->params = property_exists($data, 'params') ? $data->params : null;
+            $message->params = property_exists($data, 'params') ? JsonObject::wrap($data->params) : null;
         } else {
             if ($hasResult === $hasError) {
                 throw new \InvalidArgumentException('Invalid JSON-RPC response message: ' . json_encode($data));
@@ -399,13 +401,13 @@ class RpcMessage
             if ($hasError) {
                 self::assertValidError($data->error, $data);
                 $message->type = self::TYPE_ERROR;
-                $message->error = $data->error;
+                $message->error = JsonObject::wrap($data->error);
             } else {
                 if (!property_exists($data, 'id')) {
                     throw new \InvalidArgumentException('Invalid JSON-RPC response message: ' . json_encode($data));
                 }
                 $message->type = self::TYPE_RESPONSE;
-                $message->result = $data->result;
+                $message->result = JsonObject::wrap($data->result);
             }
 
             if (property_exists($data, 'id')) {
@@ -508,6 +510,9 @@ class RpcMessage
 
     /**
      * Get parameters
+     *
+     * For inbound messages, JSON objects are returned as {@see JsonObject}
+     * (array- and object-accessible), JSON arrays as PHP arrays.
      */
     public function getParams(): mixed
     {
@@ -516,6 +521,9 @@ class RpcMessage
 
     /**
      * Get result
+     *
+     * For inbound messages, JSON objects are returned as {@see JsonObject}
+     * (array- and object-accessible), JSON arrays as PHP arrays.
      */
     public function getResult(): mixed
     {
@@ -524,6 +532,8 @@ class RpcMessage
 
     /**
      * Get error
+     *
+     * Returns a {@see JsonObject} (array- and object-accessible) or null.
      */
     public function getError(): mixed
     {
@@ -577,14 +587,14 @@ class RpcMessage
 
     public function getErrorMessage(): string
     {
-        $message = $this->error instanceof \stdClass && property_exists($this->error, 'message') ? $this->error->message : '';
+        $message = $this->error instanceof JsonObject ? ($this->error['message'] ?? '') : '';
 
         return is_string($message) ? $message : '';
     }
 
     public function getErrorCode(): int
     {
-        $code = $this->error instanceof \stdClass && property_exists($this->error, 'code') ? $this->error->code : 0;
+        $code = $this->error instanceof JsonObject ? ($this->error['code'] ?? 0) : 0;
 
         return is_int($code) ? $code : 0;
     }

@@ -6,9 +6,9 @@ namespace Maurice\Multicurl\Tests;
 use Maurice\Multicurl\Channel;
 use Maurice\Multicurl\Manager;
 use Maurice\Multicurl\McpChannel;
+use Maurice\Multicurl\Mcp\JsonObject;
 use Maurice\Multicurl\Mcp\RpcMessage;
 use PHPUnit\Framework\TestCase;
-use stdClass;
 
 /**
  * Tests for the McpChannel class
@@ -324,11 +324,11 @@ class McpChannelTest extends TestCase
         $this->assertCount(1, $messages);
 
         $value = $messages[0]->getResult();
-        $this->assertInstanceOf(stdClass::class, $value);
-        $this->assertIsArray($value->tools);
-        $this->assertInstanceOf(stdClass::class, $value->tools[0]);
-        $this->assertInstanceOf(stdClass::class, $value->tools[0]->inputSchema->properties);
-        $this->assertIsArray($value->tools[0]->inputSchema->required);
+        $this->assertInstanceOf(JsonObject::class, $value);
+        $this->assertIsArray($value['tools']);
+        $this->assertInstanceOf(JsonObject::class, $value['tools'][0]);
+        $this->assertInstanceOf(JsonObject::class, $value['tools'][0]['inputSchema']['properties']);
+        $this->assertIsArray($value['tools'][0]['inputSchema']['required']);
     }
 
     public function testProcessJsonMessagePreservesBatchJsonShapes(): void
@@ -350,7 +350,7 @@ class McpChannelTest extends TestCase
         $this->assertCount(2, $messages);
         $this->assertSame('1', $messages[0]->getId());
         $this->assertSame('2', $messages[1]->getId());
-        $this->assertInstanceOf(stdClass::class, $messages[0]->getResult()->schema->properties);
+        $this->assertInstanceOf(JsonObject::class, $messages[0]->getResult()->schema->properties);
         $this->assertIsArray($messages[1]->getResult()->items);
     }
 
@@ -393,9 +393,9 @@ class McpChannelTest extends TestCase
         $this->assertCount(1, $messages);
 
         $error = $messages[0]->getError();
-        $this->assertInstanceOf(stdClass::class, $error);
-        $this->assertInstanceOf(stdClass::class, $error->data->details);
-        $this->assertIsArray($error->data->items);
+        $this->assertInstanceOf(JsonObject::class, $error);
+        $this->assertInstanceOf(JsonObject::class, $error['data']['details']);
+        $this->assertIsArray($error['data']['items']);
     }
 
     public function testProcessJsonMessageRejectsEmptyBatch(): void
@@ -485,8 +485,8 @@ class McpChannelTest extends TestCase
         $this->assertCount(1, $messages);
         $this->assertSame('valid', $messages[0]->getId());
         $this->assertTrue($messages[0]->isResponse());
-        $this->assertInstanceOf(stdClass::class, $messages[0]->getResult());
-        $this->assertTrue($messages[0]->getResult()->ok);
+        $this->assertInstanceOf(JsonObject::class, $messages[0]->getResult());
+        $this->assertTrue($messages[0]->getResult()['ok']);
         $this->assertInstanceOf(\InvalidArgumentException::class, $exception);
     }
 
