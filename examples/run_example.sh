@@ -33,7 +33,7 @@ if [ ! -f "$SCRIPT_PATH" ]; then
     exit 1
 fi
 
-# Run the script in the PHP 8.4 container
-echo "Running $(basename "$SCRIPT_PATH") in PHP 8.4 container..."
+# Run the script in the PHP 8.5 container
+echo "Running $(basename "$SCRIPT_PATH") in PHP 8.5 container..."
 cd "$PROJECT_ROOT"
-docker-compose run --rm -v "$PROJECT_ROOT":/app php84 php /app/examples/$(basename "$SCRIPT_PATH") 
+docker-compose run --rm -v "$PROJECT_ROOT":/app php85 php /app/examples/$(basename "$SCRIPT_PATH") 
