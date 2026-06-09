@@ -6,6 +6,7 @@ namespace Maurice\Multicurl\Tests;
 use Maurice\Multicurl\Channel;
 use Maurice\Multicurl\Manager;
 use Maurice\Multicurl\McpChannel;
+use Maurice\Multicurl\Mcp\JsonObject;
 use Maurice\Multicurl\Mcp\RpcMessage;
 use PHPUnit\Framework\TestCase;
 
@@ -304,6 +305,205 @@ class McpChannelTest extends TestCase
         $this->assertTrue(true, 'JSON serialization/deserialization working correctly');
     }
 
+    public function testProcessJsonMessagePreservesResultJsonShape(): void
+    {
+        $channel = new McpChannel('file:///dev/null', RpcMessage::toolsListRequest());
+        $messages = [];
+
+        $channel->setOnMcpMessageCallback(function (RpcMessage $message, McpChannel $channel, Manager $manager) use (&$messages): bool {
+            $messages[] = $message;
+            return true;
+        });
+
+        $result = $this->processJsonMessage(
+            $channel,
+            '{"jsonrpc":"2.0","id":"1","result":{"tools":[{"name":"test","inputSchema":{"type":"object","properties":{},"required":[]}}]}}'
+        );
+
+        $this->assertTrue($result);
+        $this->assertCount(1, $messages);
+
+        $value = $messages[0]->getResult();
+        $this->assertInstanceOf(JsonObject::class, $value);
+        $this->assertIsArray($value['tools']);
+        $this->assertInstanceOf(JsonObject::class, $value['tools'][0]);
+        $this->assertInstanceOf(JsonObject::class, $value['tools'][0]['inputSchema']['properties']);
+        $this->assertIsArray($value['tools'][0]['inputSchema']['required']);
+    }
+
+    public function testProcessJsonMessagePreservesBatchJsonShapes(): void
+    {
+        $channel = new McpChannel('file:///dev/null', RpcMessage::toolsListRequest());
+        $messages = [];
+
+        $channel->setOnMcpMessageCallback(function (RpcMessage $message, McpChannel $channel, Manager $manager) use (&$messages): bool {
+            $messages[] = $message;
+            return true;
+        });
+
+        $result = $this->processJsonMessage(
+            $channel,
+            '[{"jsonrpc":"2.0","id":"1","result":{"schema":{"properties":{}}}},{"jsonrpc":"2.0","id":"2","result":{"items":[]}}]'
+        );
+
+        $this->assertTrue($result);
+        $this->assertCount(2, $messages);
+        $this->assertSame('1', $messages[0]->getId());
+        $this->assertSame('2', $messages[1]->getId());
+        $this->assertInstanceOf(JsonObject::class, $messages[0]->getResult()->schema->properties);
+        $this->assertIsArray($messages[1]->getResult()->items);
+    }
+
+    public function testProcessJsonMessageStopsBatchWhenCallbackReturnsFalse(): void
+    {
+        $channel = new McpChannel('file:///dev/null', RpcMessage::toolsListRequest());
+        $messages = [];
+
+        $channel->setOnMcpMessageCallback(function (RpcMessage $message) use (&$messages): bool {
+            $messages[] = $message;
+            return false;
+        });
+
+        $result = $this->processJsonMessage(
+            $channel,
+            '[{"jsonrpc":"2.0","id":"first","result":{}},{"jsonrpc":"2.0","id":"second","result":{}}]'
+        );
+
+        $this->assertFalse($result);
+        $this->assertCount(1, $messages);
+        $this->assertSame('first', $messages[0]->getId());
+    }
+
+    public function testProcessJsonMessagePreservesErrorJsonShape(): void
+    {
+        $channel = new McpChannel('file:///dev/null', RpcMessage::toolsListRequest());
+        $messages = [];
+
+        $channel->setOnMcpMessageCallback(function (RpcMessage $message, McpChannel $channel, Manager $manager) use (&$messages): bool {
+            $messages[] = $message;
+            return true;
+        });
+
+        $result = $this->processJsonMessage(
+            $channel,
+            '{"jsonrpc":"2.0","id":"1","error":{"code":-32602,"message":"Invalid params","data":{"details":{},"items":[]}}}'
+        );
+
+        $this->assertFalse($result);
+        $this->assertCount(1, $messages);
+
+        $error = $messages[0]->getError();
+        $this->assertInstanceOf(JsonObject::class, $error);
+        $this->assertInstanceOf(JsonObject::class, $error['data']['details']);
+        $this->assertIsArray($error['data']['items']);
+    }
+
+    public function testProcessJsonMessageRejectsEmptyBatch(): void
+    {
+        $channel = new McpChannel('file:///dev/null', RpcMessage::toolsListRequest());
+        $callbackCalled = false;
+        $exception = null;
+
+        $channel->setOnMcpMessageCallback(function () use (&$callbackCalled): bool {
+            $callbackCalled = true;
+            return true;
+        });
+        $channel->setOnExceptionCallback(function (\Exception $caught) use (&$exception): void {
+            $exception = $caught;
+        });
+
+        $this->assertNull($this->processJsonMessage($channel, '[]'));
+        $this->assertFalse($callbackCalled);
+        $this->assertInstanceOf(\InvalidArgumentException::class, $exception);
+        $this->assertStringContainsString('batch', $exception->getMessage());
+    }
+
+    public function testProcessJsonMessageRejectsInvalidEnvelope(): void
+    {
+        $channel = new McpChannel('file:///dev/null', RpcMessage::toolsListRequest());
+        $callbackCalled = false;
+        $exception = null;
+
+        $channel->setOnMcpMessageCallback(function () use (&$callbackCalled): bool {
+            $callbackCalled = true;
+            return true;
+        });
+        $channel->setOnExceptionCallback(function (\Exception $caught) use (&$exception): void {
+            $exception = $caught;
+        });
+
+        $this->assertNull($this->processJsonMessage($channel, '{"jsonrpc":"2.0","method":null,"id":"1"}'));
+        $this->assertFalse($callbackCalled);
+        $this->assertInstanceOf(\InvalidArgumentException::class, $exception);
+        $this->assertStringContainsString('method', $exception->getMessage());
+    }
+
+    public function testProcessJsonMessageReturnsFalseForInvalidBatchItem(): void
+    {
+        $channel = new McpChannel('file:///dev/null', RpcMessage::toolsListRequest());
+        $messages = [];
+        $exception = null;
+
+        $channel->setOnMcpMessageCallback(function (RpcMessage $message) use (&$messages): bool {
+            $messages[] = $message;
+            return true;
+        });
+        $channel->setOnExceptionCallback(function (\Exception $caught) use (&$exception): void {
+            $exception = $caught;
+        });
+
+        $result = $this->processJsonMessage(
+            $channel,
+            '[{"jsonrpc":"2.0","id":"1","result":{}},{"jsonrpc":"2.0","method":null,"id":"2"}]'
+        );
+
+        $this->assertFalse($result);
+        $this->assertCount(1, $messages);
+        $this->assertInstanceOf(\InvalidArgumentException::class, $exception);
+    }
+
+    public function testProcessJsonMessageContinuesBatchAfterInvalidItem(): void
+    {
+        $channel = new McpChannel('file:///dev/null', RpcMessage::toolsListRequest());
+        $messages = [];
+        $exception = null;
+
+        $channel->setOnMcpMessageCallback(function (RpcMessage $message) use (&$messages): bool {
+            $messages[] = $message;
+            return true;
+        });
+        $channel->setOnExceptionCallback(function (\Exception $caught) use (&$exception): void {
+            $exception = $caught;
+        });
+
+        $result = $this->processJsonMessage(
+            $channel,
+            '[{"jsonrpc":"2.0","method":null,"id":"invalid"},{"jsonrpc":"2.0","id":"valid","result":{"ok":true}}]'
+        );
+
+        $this->assertFalse($result);
+        $this->assertCount(1, $messages);
+        $this->assertSame('valid', $messages[0]->getId());
+        $this->assertTrue($messages[0]->isResponse());
+        $this->assertInstanceOf(JsonObject::class, $messages[0]->getResult());
+        $this->assertTrue($messages[0]->getResult()['ok']);
+        $this->assertInstanceOf(\InvalidArgumentException::class, $exception);
+    }
+
+    public function testProcessJsonMessageIgnoresInvalidJson(): void
+    {
+        $channel = new McpChannel('file:///dev/null', RpcMessage::toolsListRequest());
+        $callbackCalled = false;
+
+        $channel->setOnMcpMessageCallback(function () use (&$callbackCalled): bool {
+            $callbackCalled = true;
+            return true;
+        });
+
+        $this->assertNull($this->processJsonMessage($channel, '{'));
+        $this->assertFalse($callbackCalled);
+    }
+
     public function testMcpSessionIdManagement(): void
     {
         // Test session ID management in McpChannel
@@ -322,6 +522,13 @@ class McpChannelTest extends TestCase
         $this->assertNull($channel->getSessionId());
 
         $this->assertTrue(true, 'Session ID management working correctly');
+    }
+
+    private function processJsonMessage(McpChannel $channel, string $json): ?bool
+    {
+        $method = new \ReflectionMethod(McpChannel::class, 'processJsonMessage');
+
+        return $method->invoke($channel, $json, new Manager());
     }
 
     public function testMcpMessageTypes(): void

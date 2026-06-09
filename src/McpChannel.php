@@ -350,33 +350,52 @@ class McpChannel extends HttpChannel
      */
     protected function processJsonMessage(string $json, Manager $manager): ?bool
     {
-        $data = json_decode($json, true);
-        if ($data === null) {
+        try {
+            $data = json_decode($json, false, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
             // Invalid JSON, ignore
             return null;
         }
 
-        if (is_array($data) && isset($data[0])) {
+        if (is_array($data)) {
             // Batch of messages
+            if (empty($data)) {
+                $this->onException(new \InvalidArgumentException('Invalid JSON-RPC batch: empty array'));
+                return null;
+            }
+
             $res = true;
             foreach ($data as $item) {
                 try {
-                    $message = RpcMessage::fromArray($item);
-                    $res = $res && $this->onMcpMessage($message, $manager);
+                    if (!$item instanceof \stdClass) {
+                        throw new \InvalidArgumentException('Invalid JSON-RPC message: ' . json_encode($item));
+                    }
+
+                    $message = RpcMessage::fromDecodedJson($item);
+                    $messageResult = $this->onMcpMessage($message, $manager);
+                    if ($messageResult === false) {
+                        return false;
+                    }
+
                     if ($message->isError()) {
                         // if the message is an error the overall result will be false
                         $res = false;
                     }
                 } catch (\Exception $e) {
                     // Skip invalid messages
+                    $res = false;
                     $this->onException($e);
                 }
             }
             return $res;
         } else {
+            if (!$data instanceof \stdClass) {
+                return null;
+            }
+
             // Single message
             try {
-                $message = RpcMessage::fromArray($data);
+                $message = RpcMessage::fromDecodedJson($data);
                 $res = $this->onMcpMessage($message, $manager);
                 if ($message->isError()) {
                     // if the message is an error, stop processing
@@ -450,14 +469,12 @@ class McpChannel extends HttpChannel
             if ($message->isError()) {
                 // Propagate error to caller via exception
                 throw new \RuntimeException('MCP initialization error: ' .
-                    ($message->getError()['message'] ?? 'Unknown error') .
-                    ' (Code: ' . ($message->getError()['code'] ?? 'unknown') . ')');
+                    ($message->getErrorMessage() ?: 'Unknown error') .
+                    ' (Code: ' . ($message->getErrorCode() ?: 'unknown') . ')');
             }
 
             if ($message->isResponse() && $message->getId() == $channel->getRpcMessage()->getId()) {
-                if ($message->getResult()) {
-                    $result = $message->getResult();
-
+                if ($message->getResult() !== null) {
                     // update the main channel's session ID
                     $mainChannel->setSessionId($channel->getSessionId());
 
