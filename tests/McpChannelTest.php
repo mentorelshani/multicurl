@@ -50,6 +50,10 @@ class McpChannelTest extends TestCase
 
         $mainChannel->setAutomaticInitialize(
             preInitRequestCallback: function (RpcMessage $message, McpChannel $channel): ?RpcMessage {
+                if ($message->getMethod() !== 'initialize') {
+                    return null;
+                }
+
                 $params = $message->getParams();
                 assert(is_array($params));
 
